@@ -15,6 +15,7 @@ type createUserInput struct {
 	Username string
 }
 
+// 创建一个用户
 func (h *handler) createUser(w http.ResponseWriter, r *http.Request) {
 	var in createUserInput
 	defer r.Body.Close()
@@ -42,6 +43,7 @@ func (h *handler) createUser(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// 查找一定范围内的用户
 func (h *handler) users(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	search := q.Get("search")
@@ -70,6 +72,7 @@ func (h *handler) usernames(w http.ResponseWriter, r *http.Request) {
 	respond(w, uu, http.StatusOK)
 }
 
+// 查询用户的个人信息
 func (h *handler) user(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	username := way.Param(ctx, "username")
@@ -92,6 +95,7 @@ func (h *handler) user(w http.ResponseWriter, r *http.Request) {
 	respond(w, u, http.StatusOK)
 }
 
+//更新头像
 func (h *handler) updateAvatar(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, service.MaxAvatarBytes)
 	defer r.Body.Close()
@@ -114,6 +118,8 @@ func (h *handler) updateAvatar(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, avatarURL)
 }
 
+// 切换关注状态，也就是未关注的调用此函数之后，会变成关注
+// 已经关注了的，调用此函数之后变成未关注。
 func (h *handler) toggleFollow(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	username := way.Param(ctx, "username")
@@ -147,6 +153,7 @@ func (h *handler) toggleFollow(w http.ResponseWriter, r *http.Request) {
 	respond(w, out, http.StatusOK)
 }
 
+// 获取关注用户username的用户（也就是 username的粉丝）
 func (h *handler) followers(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	q := r.URL.Query()
@@ -167,6 +174,7 @@ func (h *handler) followers(w http.ResponseWriter, r *http.Request) {
 	respond(w, uu, http.StatusOK)
 }
 
+//获取用户username关注的用户
 func (h *handler) followees(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	q := r.URL.Query()

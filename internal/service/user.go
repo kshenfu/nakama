@@ -247,6 +247,9 @@ func (s *Service) userByID(ctx context.Context, id string) (User, error) {
 }
 
 // User with the given username.
+// 查询给定的用户名username 的信息。其中需要注意的sql语句中的2个字段 following 和 followeed
+// uid 表示发起这个请求的用户的id（假设为用户A），username为用户B， following表示 A是否关注了B
+// 相反followeed 字段表示 A 是否被B关注
 func (s *Service) User(ctx context.Context, username string) (UserProfile, error) {
 	var u UserProfile
 
@@ -371,6 +374,8 @@ func (s *Service) UpdateAvatar(ctx context.Context, r io.Reader) (string, error)
 }
 
 // ToggleFollow between two users.
+// 关注的人的ID为followerID，被关注的人的ID为followeeID
+// followees_count 表示自己关注的人的数量，followeer_count 表示关注自己的人的数量（也就是粉丝数）
 func (s *Service) ToggleFollow(ctx context.Context, username string) (ToggleFollowOutput, error) {
 	var out ToggleFollowOutput
 	followerID, ok := ctx.Value(KeyAuthUserID).(string)
@@ -399,6 +404,9 @@ func (s *Service) ToggleFollow(ctx context.Context, username string) (ToggleFoll
 			return ErrForbiddenFollow
 		}
 
+		// SELECT 1 FROM follows 是什么语法呢？？用来当做判断子查询是否成功，其效率比 SELECT * FROM follows要高
+		// SELECT 1 FROM follows WHERE follower_id = $1 AND followee_id = $2 表示只要WHERE 后面条件满足，就有返回值，什么结果无所谓
+		// EXISTS关键字: 如果子查询不为空，就返回TRUE。 SELECT EXISTS 就是获取子查询的结果TRUE 或者FALSE。
 		query = `
 			SELECT EXISTS (
 				SELECT 1 FROM follows WHERE follower_id = $1 AND followee_id = $2

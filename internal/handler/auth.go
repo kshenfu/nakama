@@ -153,7 +153,7 @@ func (h *handler) withAuth(next http.Handler) http.Handler {
 			return
 		}
 
-		uid, err := h.AuthUserIDFromToken(token)
+		uid, err := h.AuthUserIDFromToken(token) // 从token中取出对应的uid
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusUnauthorized)
 			return

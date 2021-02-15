@@ -192,7 +192,7 @@ func (s *Service) DevLogin(ctx context.Context, email string) (DevLoginOutput, e
 
 	out.User.AvatarURL = s.avatarURL(avatar)
 
-	out.Token, err = s.codec().EncodeToString(out.User.ID)
+	out.Token, err = s.codec().EncodeToString(out.User.ID) //生成Token，以用户的ID为key
 	if err != nil {
 		return out, fmt.Errorf("could not create token: %w", err)
 	}

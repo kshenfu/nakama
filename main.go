@@ -154,10 +154,13 @@ func env(key, fallbackValue string) string {
 	return s
 }
 
+//LogWrapper 是用来包装Logger对象
 type LogWrapper struct {
 	Logger *log.Logger
 }
 
+//Log 打印日志
 func (l *LogWrapper) Log(args ...interface{}) { l.Logger.Println(args...) }
 
+//Logf 格式化打印日志
 func (l *LogWrapper) Logf(format string, args ...interface{}) { l.Logger.Printf(format, args...) }
