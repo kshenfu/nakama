@@ -183,6 +183,7 @@ func (s *Service) notifyFollow(followerID, followeeID string) {
 		}
 
 		var notified bool
+		// 查询表中是否已经存在了actors 用户对 followeeID 这个用户的关注通知
 		query = `SELECT EXISTS (
 			SELECT 1 FROM notifications
 			WHERE user_id = $1
@@ -194,7 +195,7 @@ func (s *Service) notifyFollow(followerID, followeeID string) {
 			return fmt.Errorf("could not query select follow notification existence: %w", err)
 		}
 
-		if notified {
+		if notified { // 如果已经存在这个关注的通知了，就直接返回
 			return nil
 		}
 

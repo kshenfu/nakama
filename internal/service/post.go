@@ -17,6 +17,7 @@ var (
 	// ErrInvalidPostID denotes an invalid post id; that is not uuid.
 	ErrInvalidPostID = errors.New("invalid post id")
 	// ErrInvalidContent denotes an invalid content.
+	// 如果是表情的话，会返回这个
 	ErrInvalidContent = errors.New("invalid content")
 	// ErrInvalidSpoiler denotes an invalid spoiler title.
 	ErrInvalidSpoiler = errors.New("invalid spoiler")
@@ -30,14 +31,14 @@ type Post struct {
 	UserID        string    `json:"-"`
 	Content       string    `json:"content"`
 	SpoilerOf     *string   `json:"spoilerOf"`
-	NSFW          bool      `json:"NSFW"`
-	LikesCount    int       `json:"likesCount"`
-	CommentsCount int       `json:"commentsCount"`
-	CreatedAt     time.Time `json:"createdAt"`
+	NSFW          bool      `json:"NSFW"`          //是否有安全警告，有些帖子会被标注为不安全的帖子
+	LikesCount    int       `json:"likesCount"`    //点赞数
+	CommentsCount int       `json:"commentsCount"` // 评论数
+	CreatedAt     time.Time `json:"createdAt"`     // 帖子发布时间
 	User          *User     `json:"user,omitempty"`
-	Mine          bool      `json:"mine"`
-	Liked         bool      `json:"liked"`
-	Subscribed    bool      `json:"subscribed"`
+	Mine          bool      `json:"mine"`       // 是否是当前用户自己发的帖子
+	Liked         bool      `json:"liked"`      // 当前用户是否点赞了这个帖子
+	Subscribed    bool      `json:"subscribed"` // 当前用户是否订阅了这个帖子（也可以说是收藏）
 }
 
 // ToggleLikeOutput response.
@@ -60,7 +61,7 @@ func (s *Service) CreatePost(ctx context.Context, content string, spoilerOf *str
 	}
 
 	content = smartTrim(content)
-	if content == "" || utf8.RuneCountInString(content) > 480 {
+	if content == "" || utf8.RuneCountInString(content) > 480 { //emoji表情符号的长度不正确
 		return ti, ErrInvalidContent
 	}
 
@@ -73,6 +74,7 @@ func (s *Service) CreatePost(ctx context.Context, content string, spoilerOf *str
 
 	var p Post
 	err := crdb.ExecuteTx(ctx, s.db, nil, func(tx *sql.Tx) error {
+		// 这个sql表示如果插入成功返回id和 created_at 2个字段。
 		query := `
 			INSERT INTO posts (user_id, content, spoiler_of, nsfw) VALUES ($1, $2, $3, $4)
 			RETURNING id, created_at`
@@ -94,7 +96,7 @@ func (s *Service) CreatePost(ctx context.Context, content string, spoilerOf *str
 		}
 
 		p.Subscribed = true
-
+		// 插入时间轴，一些应用上会有这样的提示: 这个帖子发布于多少分钟前，或者1小时前（比如微博）
 		query = "INSERT INTO timeline (user_id, post_id) VALUES ($1, $2) RETURNING id"
 		err = tx.QueryRowContext(ctx, query, uid, p.ID).Scan(&ti.ID)
 		if err != nil {
@@ -111,12 +113,14 @@ func (s *Service) CreatePost(ctx context.Context, content string, spoilerOf *str
 		return ti, err
 	}
 
-	go s.postCreated(p)
+	go s.postCreated(p) // 这些操作不需要返回给客户端，应该放到协程中去做，而且可以加快响应速度。
 
 	return ti, nil
 }
 
+// 帖子发出后通知关注我的用户，并且设置通知，当有人@我时会给我通知。
 func (s *Service) postCreated(p Post) {
+	// 查询出用户的信息，用来填充到Post中
 	u, err := s.userByID(context.Background(), p.UserID)
 	if err != nil {
 		log.Printf("could not fetch post user: %v\n", err)
@@ -132,6 +136,7 @@ func (s *Service) postCreated(p Post) {
 }
 
 // Posts from a user in descending order and with backward pagination.
+// 根据用户名获取到一个用户发表的所有帖子
 func (s *Service) Posts(ctx context.Context, username string, last int, before string) ([]Post, error) {
 	username = strings.TrimSpace(username)
 	if !reUsername.MatchString(username) {
@@ -210,6 +215,7 @@ func (s *Service) Posts(ctx context.Context, username string, last int, before s
 }
 
 // Post with the given ID.
+// 根据PostId 获取到帖子的详细信息，以及当前用户是否对这个帖子点赞收藏这些状态信息
 func (s *Service) Post(ctx context.Context, postID string) (Post, error) {
 	var p Post
 	if !reUUID.MatchString(postID) {
@@ -274,6 +280,7 @@ func (s *Service) Post(ctx context.Context, postID string) (Post, error) {
 }
 
 // TogglePostLike 🖤
+// 给帖子点赞
 func (s *Service) TogglePostLike(ctx context.Context, postID string) (ToggleLikeOutput, error) {
 	var out ToggleLikeOutput
 	uid, ok := ctx.Value(KeyAuthUserID).(string)
@@ -285,6 +292,7 @@ func (s *Service) TogglePostLike(ctx context.Context, postID string) (ToggleLike
 		return out, ErrInvalidPostID
 	}
 
+	// crdb.ExecuteTx 函数的第4个参数中的操作会被当成事务。将需要执行事务操作的语句都放到这个函数中就可以了。
 	err := crdb.ExecuteTx(ctx, s.db, nil, func(tx *sql.Tx) error {
 		query := `
 			SELECT EXISTS (
@@ -295,7 +303,7 @@ func (s *Service) TogglePostLike(ctx context.Context, postID string) (ToggleLike
 			return fmt.Errorf("could not query select post like existence: %w", err)
 		}
 
-		if out.Liked {
+		if out.Liked { //取消点赞
 			query = "DELETE FROM post_likes WHERE user_id = $1 AND post_id = $2"
 			if _, err = tx.ExecContext(ctx, query, uid, postID); err != nil {
 				return fmt.Errorf("could not delete post like: %w", err)

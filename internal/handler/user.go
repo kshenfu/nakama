@@ -95,7 +95,7 @@ func (h *handler) user(w http.ResponseWriter, r *http.Request) {
 	respond(w, u, http.StatusOK)
 }
 
-//更新头像
+//更新用户头像
 func (h *handler) updateAvatar(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, service.MaxAvatarBytes)
 	defer r.Body.Close()

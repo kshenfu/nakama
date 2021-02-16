@@ -23,6 +23,7 @@ type TimelineItem struct {
 }
 
 // Timeline of the authenticated user in descending order and with backward pagination.
+// 将帖子按发布时间排序进行返回
 func (s *Service) Timeline(ctx context.Context, last int, before string) ([]TimelineItem, error) {
 	uid, ok := ctx.Value(KeyAuthUserID).(string)
 	if !ok {
@@ -30,6 +31,7 @@ func (s *Service) Timeline(ctx context.Context, last int, before string) ([]Time
 	}
 
 	last = normalizePageSize(last)
+	// 按创建时间递减进行排序，这样最新创建的帖子就在最前面
 	query, args, err := buildQuery(`
 		SELECT timeline.id, posts.id, content, spoiler_of, nsfw, likes_count, comments_count, created_at
 		, posts.user_id = @uid AS mine
@@ -156,7 +158,11 @@ func (s *Service) DeleteTimelineItem(ctx context.Context, timelineItemID string)
 	return nil
 }
 
+// 更新 timeline 表，这个表的用处是什么现在还不知道
 func (s *Service) fanoutPost(p Post) {
+	// 首先插入 timeline 表，这个表记录了userid,post_id，并且生成了一个 id字段。这个表的作用是用来给关注的用户进行通知用的
+	// 所有关注的用户会订阅 timelineTopic() 生成的topic，然后发了新帖子的时候，会给这个 topic 生产一个消息，然后供
+	// 订阅这个 topic 的用户去进行消费。
 	query := `
 		INSERT INTO timeline (user_id, post_id)
 		SELECT follower_id, $1 FROM follows WHERE followee_id = $2
@@ -196,6 +202,7 @@ func (s *Service) broadcastTimelineItem(ti TimelineItem) {
 		return
 	}
 
+	// 这个Pub() 是发布一个 Topic，还是往topic里面添加了一个消息供消费者消费呢？
 	err = s.pubsub.Pub(timelineTopic(ti.UserID), b.Bytes())
 	if err != nil {
 		log.Printf("could not publish timeline item: %v\n", err)

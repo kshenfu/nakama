@@ -306,6 +306,8 @@ func (s *Service) User(ctx context.Context, username string) (UserProfile, error
 }
 
 // UpdateAvatar of the authenticated user returning the new avatar URL.
+// 这里更新的头像只是将其生成了一个随机的ID作为头像文件名称，然后创建这个文件，将上传的图片经过转换后保存到这个文件中，
+// PS: 这个文件只是保存在本地，实际商用肯定要改成分布式文件系统或者云平台
 func (s *Service) UpdateAvatar(ctx context.Context, r io.Reader) (string, error) {
 	uid, ok := ctx.Value(KeyAuthUserID).(string)
 	if !ok {
@@ -313,7 +315,7 @@ func (s *Service) UpdateAvatar(ctx context.Context, r io.Reader) (string, error)
 	}
 
 	r = io.LimitReader(r, MaxAvatarBytes)
-	img, format, err := image.Decode(r)
+	img, format, err := image.Decode(r) // 将上传的二进制数据解码成Image对象
 	if err == image.ErrFormat {
 		return "", ErrUnsupportedAvatarFormat
 	}
@@ -326,7 +328,7 @@ func (s *Service) UpdateAvatar(ctx context.Context, r io.Reader) (string, error)
 		return "", ErrUnsupportedAvatarFormat
 	}
 
-	avatar, err := gonanoid.Nanoid()
+	avatar, err := gonanoid.Nanoid() //生存随机ID
 	if err != nil {
 		return "", fmt.Errorf("could not generate avatar filename: %w", err)
 	}
@@ -344,6 +346,7 @@ func (s *Service) UpdateAvatar(ctx context.Context, r io.Reader) (string, error)
 	}
 
 	defer f.Close()
+	// 将 img 进行转换，转换为 400x400的图片。
 	img = imaging.Fill(img, 400, 400, imaging.Center, imaging.CatmullRom)
 	if format == "png" {
 		err = png.Encode(f, img)
@@ -355,6 +358,7 @@ func (s *Service) UpdateAvatar(ctx context.Context, r io.Reader) (string, error)
 	}
 
 	var oldAvatar sql.NullString
+	// 由于会先执行子查询，在没有更新之前的查询，那就是旧头像了，然后用 RETURNING 返回
 	if err = s.db.QueryRowContext(ctx, `
 		UPDATE users SET avatar = $1 WHERE id = $2
 		RETURNING (SELECT avatar FROM users WHERE id = $2) AS old_avatar`, avatar, uid).
@@ -364,7 +368,7 @@ func (s *Service) UpdateAvatar(ctx context.Context, r io.Reader) (string, error)
 	}
 
 	if oldAvatar.Valid {
-		defer os.Remove(path.Join(avatarsDir, oldAvatar.String))
+		defer os.Remove(path.Join(avatarsDir, oldAvatar.String)) //删除旧头像
 	}
 
 	avatarURL := cloneURL(s.origin)
