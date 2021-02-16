@@ -1,5 +1,7 @@
 ![banner](assets/banner.svg)
 
+克隆这个仓库主要是用于个人学习，在其中添加了一些注释，方便之后复习。
+
 # Nakama
 
 Source code of the next social network for anime fans. Still on development.
