@@ -29,7 +29,7 @@ func (h *handler) timeline(w http.ResponseWriter, r *http.Request) {
 		respondErr(w, err)
 		return
 	}
-
+	//虽然可以很快获得 http.Response 对象，但它并不表示最终任务完成（请求结束），而是先返回请求状态码，再不断返回拉取进度(通过http.Flusher)，那怎样才知道任务完成了呢？
 	respond(w, tt, http.StatusOK)
 }
 
@@ -56,6 +56,7 @@ func (h *handler) timelineItemStream(w http.ResponseWriter, r *http.Request) {
 	header.Set("Connection", "keep-alive")
 	header.Set("Content-Type", "text/event-stream; charset=utf-8")
 
+	// 这个循环如何终止呢？？ h.TimelineItemStream() 中有一个协程调用了 close(tt)，遍历就会终止了
 	for ti := range tt {
 		writeSSE(w, ti)
 		f.Flush()

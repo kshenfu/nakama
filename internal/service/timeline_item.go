@@ -102,6 +102,7 @@ func (s *Service) Timeline(ctx context.Context, last int, before string) ([]Time
 }
 
 // TimelineItemStream to receive timeline items in realtime.
+// 实时接收 timelineitem，并进行消费。
 func (s *Service) TimelineItemStream(ctx context.Context) (<-chan TimelineItem, error) {
 	uid, ok := ctx.Value(KeyAuthUserID).(string)
 	if !ok {
@@ -109,7 +110,9 @@ func (s *Service) TimelineItemStream(ctx context.Context) (<-chan TimelineItem, 
 	}
 
 	tt := make(chan TimelineItem)
-	unsub, err := s.pubsub.Sub(timelineTopic(uid), func(data []byte) {
+	// 从 NAT MQ中消费接收到的TimelineItem，是对于这个Topic的所有消息都调用 sub() 函数的第二个参数进行处理吗？
+	// TimelineItemStream 这是用户登录上来的时候需要调用的函数，用来获取这个用户所有的通知。
+	unsub, err := s.pubsub.Sub(timelineTopic(uid), func(data []byte) { 
 		go func(r io.Reader) {
 			var ti TimelineItem
 			err := gob.NewDecoder(r).Decode(&ti)
@@ -126,7 +129,7 @@ func (s *Service) TimelineItemStream(ctx context.Context) (<-chan TimelineItem, 
 	}
 
 	go func() {
-		<-ctx.Done()
+		<-ctx.Done() // 如果父goroutine 发起了取消请求，需要进行清理。
 		if err := unsub(); err != nil {
 			log.Printf("could not unsubcribe from timeline: %v\n", err)
 			// don't return
@@ -159,10 +162,19 @@ func (s *Service) DeleteTimelineItem(ctx context.Context, timelineItemID string)
 }
 
 // 更新 timeline 表，这个表的用处是什么现在还不知道
+// 关于fanout的含义，参考: https://mp.weixin.qq.com/s?__biz=MjM5NzQ3ODAwMQ==&mid=404465806&idx=1&sn=3a68a786138538ffc452bca06a4892c8&scene=0#rd
+// fanout表示广播模式，当用户发布新帖子的时候，需要通知所有关注这个用户的粉丝
 func (s *Service) fanoutPost(p Post) {
 	// 首先插入 timeline 表，这个表记录了userid,post_id，并且生成了一个 id字段。这个表的作用是用来给关注的用户进行通知用的
 	// 所有关注的用户会订阅 timelineTopic() 生成的topic，然后发了新帖子的时候，会给这个 topic 生产一个消息，然后供
 	// 订阅这个 topic 的用户去进行消费。
+	// INSERT INTO 语句后加上 SELECT 语句，表示这条INSERT语句中的value里的个别值需要从SELECT 查询的表中获取。
+	// 这里的SQL 语句含义是：从follows 中查出followee_id=p.UserID 的记录中的 follower_id ，再加上p.ID 作为 INSERT 语句的value。
+	// 这里有点疑惑的是：p.ID（也就是postid）根本不是 follows 表中的字段，假设 p.ID = 112233445566，那么久变成了：
+	// SELECT follower_id, 112233445566 FROM follows WHERE followee_id = $2，SELECT 语句后跟一个常量而不是一个字段名，这样的方式是百分百能够返回 follower_id 的值加上112233445566吗？
+	// 如果是这样的话，这两个值刚好组成 (user_id, post_id) 的值，可以插入到 timeline 表中。
+	// 所以，这个sql 的意思是：将所有关注 p.UserID 的用户，以及这个postid 组成一行数据插入到 timeline 表中，然后返回插入timeline表后自动生成的 id 和 user_id，
+	// 返回的每一条结果代表一条需要通知的消息。
 	query := `
 		INSERT INTO timeline (user_id, post_id)
 		SELECT follower_id, $1 FROM follows WHERE followee_id = $2
@@ -185,7 +197,7 @@ func (s *Service) fanoutPost(p Post) {
 		ti.PostID = p.ID
 		ti.Post = &p
 
-		go s.broadcastTimelineItem(ti)
+		go s.broadcastTimelineItem(ti) //通知所有关注这个用户的粉丝，这些放到后台通知，对粉丝的通知没必要等待，尽快响应。
 	}
 
 	if err = rows.Err(); err != nil {
@@ -194,6 +206,7 @@ func (s *Service) fanoutPost(p Post) {
 	}
 }
 
+//广播一条 TimelineItem，一条 TimelineItem 表示一个通知。
 func (s *Service) broadcastTimelineItem(ti TimelineItem) {
 	var b bytes.Buffer
 	err := gob.NewEncoder(&b).Encode(ti)
@@ -210,4 +223,5 @@ func (s *Service) broadcastTimelineItem(ti TimelineItem) {
 	}
 }
 
+// 对于关注userID 这个用户的所有粉丝进行通知的消息的topic 命名为 "timeline_item_" + userID
 func timelineTopic(userID string) string { return "timeline_item_" + userID }
